@@ -46,6 +46,7 @@ qemu: kernel $(img)
 		-device virtio-blk-device,drive=x0 \
 		-device virtio-gpu-device \
 		-device virtio-mouse-device \
+		-device virtio-keyboard-device \
 		# -netdev type=tap,id=net0,script=no,downscript=no \
 		# -device virtio-net-device,netdev=net0
 

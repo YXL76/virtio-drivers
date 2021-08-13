@@ -74,6 +74,15 @@ impl VirtIOGpu<'_> {
         (self.rect.width, self.rect.height)
     }
 
+    /// Get the framebuffer.
+    pub fn framebuffer(&self) -> Option<&mut [u8]> {
+        if let Some(ref buf) = self.frame_buffer_dma {
+            Some(unsafe { buf.as_buf() })
+        } else {
+            None
+        }
+    }
+
     /// Setup framebuffer
     pub fn setup_framebuffer(&mut self) -> Result<&mut [u8]> {
         // get display info
