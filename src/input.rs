@@ -15,7 +15,7 @@ pub struct VirtIOInput<'a> {
     event_buf: &'a mut [Event],
     x: i32,
     y: i32,
-    key: (u16, u32),
+    key: [u8; 96],
 }
 
 impl<'a> VirtIOInput<'a> {
@@ -53,7 +53,7 @@ impl<'a> VirtIOInput<'a> {
             event_buf,
             x: 0,
             y: 0,
-            key: (0, 0),
+            key: [0; 96],
         })
     }
 
@@ -66,7 +66,11 @@ impl<'a> VirtIOInput<'a> {
         while let Ok((token, _)) = self.event_queue.pop_used() {
             let event = &mut self.event_buf[token as usize];
             match EventRepr::from(*event) {
-                EventRepr::KeyBtn(code, status) => self.key = (code, status),
+                EventRepr::KeyBtn(code, status) => match status {
+                    0 => self.key[(code / 8) as usize] &= !1 << (code % 8),
+                    1 => self.key[(code / 8) as usize] |= 1 << (code % 8),
+                    _ => (),
+                },
                 EventRepr::RelX(dx) => self.x += dx,
                 EventRepr::RelY(dy) => self.y += dy,
                 r => warn!("{:?}", r),
@@ -83,8 +87,8 @@ impl<'a> VirtIOInput<'a> {
     }
 
     /// Get the key/button
-    pub fn key(&self) -> (u16, u32) {
-        self.key
+    pub fn key(&self) -> &[u8; 96] {
+        &self.key
     }
 }
 
@@ -142,6 +146,7 @@ enum EventRepr {
     SynReport,
     SynUnknown(u16),
     KeyBtn(u16, u32),
+    KeyBtnUnknown(u16, u32),
     RelX(i32),
     RelY(i32),
     RelUnknown(u16),
@@ -158,7 +163,10 @@ impl From<Event> for EventRepr {
                 0 => EventRepr::SynReport,
                 _ => EventRepr::SynUnknown(e.code),
             },
-            1 => EventRepr::KeyBtn(e.code, e.value),
+            1 => match e.code {
+                code if code <= 0x2FF => EventRepr::KeyBtn(e.code, e.value),
+                _ => EventRepr::KeyBtnUnknown(e.code, e.value),
+            },
             2 => match e.code {
                 0 => EventRepr::RelX(e.value as i32),
                 1 => EventRepr::RelY(e.value as i32),
