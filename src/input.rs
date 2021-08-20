@@ -1,4 +1,5 @@
 use super::*;
+use alloc::boxed::Box;
 use bitflags::*;
 use log::*;
 use volatile::Volatile;
@@ -15,7 +16,8 @@ pub struct VirtIOInput<'a> {
     event_buf: &'a mut [Event],
     x: i32,
     y: i32,
-    key: [u8; 96],
+    key: [u8; 96], // KEY_MAX / 8
+    event: Option<Box<dyn Fn(EventRepr) + Send>>,
 }
 
 impl<'a> VirtIOInput<'a> {
@@ -54,6 +56,7 @@ impl<'a> VirtIOInput<'a> {
             x: 0,
             y: 0,
             key: [0; 96],
+            event: None,
         })
     }
 
@@ -65,15 +68,20 @@ impl<'a> VirtIOInput<'a> {
         }
         while let Ok((token, _)) = self.event_queue.pop_used() {
             let event = &mut self.event_buf[token as usize];
-            match EventRepr::from(*event) {
-                EventRepr::KeyBtn(code, status) => match status {
+            let event_repr = EventRepr::from(*event);
+            match event_repr {
+                EventRepr::Key(code, status) => match status {
                     0 => self.key[(code / 8) as usize] &= !1 << (code % 8),
                     1 => self.key[(code / 8) as usize] |= 1 << (code % 8),
                     _ => (),
                 },
                 EventRepr::RelX(dx) => self.x += dx,
                 EventRepr::RelY(dy) => self.y += dy,
-                r => warn!("{:?}", r),
+                // r => warn!("{:?}", r),
+                _ => (),
+            };
+            if let Some(ref e) = self.event {
+                e(event_repr);
             }
             // requeue
             self.event_queue.add(&[], &[event.as_buf_mut()])?;
@@ -86,9 +94,14 @@ impl<'a> VirtIOInput<'a> {
         (self.x, self.y)
     }
 
-    /// Get the key/button
+    /// Get the key/button.
     pub fn key(&self) -> &[u8; 96] {
         &self.key
+    }
+
+    /// Set the event handler.
+    pub fn set_event(&mut self, event: Box<dyn Fn(EventRepr) + Send>) {
+        self.event = Some(event);
     }
 }
 
@@ -141,15 +154,26 @@ struct Event {
     value: u32,
 }
 
-#[derive(Debug)]
-enum EventRepr {
+///
+#[derive(Debug, Clone, Copy)]
+pub enum EventRepr {
+    ///
     SynReport,
+    ///
     SynUnknown(u16),
-    KeyBtn(u16, u32),
-    KeyBtnUnknown(u16, u32),
+    ///
+    Key(u16, u32),
+    ///
+    KeyUnknown(u16, u32),
+    ///
     RelX(i32),
+    ///
     RelY(i32),
+    ///
+    RelWhell(i32),
+    ///
     RelUnknown(u16),
+    ///
     Unknown(u16),
 }
 
@@ -164,12 +188,13 @@ impl From<Event> for EventRepr {
                 _ => EventRepr::SynUnknown(e.code),
             },
             1 => match e.code {
-                code if code <= 0x2FF => EventRepr::KeyBtn(e.code, e.value),
-                _ => EventRepr::KeyBtnUnknown(e.code, e.value),
+                code if code <= KEY_MAX => EventRepr::Key(e.code, e.value),
+                _ => EventRepr::KeyUnknown(e.code, e.value),
             },
             2 => match e.code {
                 0 => EventRepr::RelX(e.value as i32),
                 1 => EventRepr::RelY(e.value as i32),
+                8 => EventRepr::RelWhell(e.value as i32),
                 _ => EventRepr::RelUnknown(e.code),
             },
             _ => EventRepr::Unknown(e.event_type),
@@ -202,3 +227,5 @@ const QUEUE_STATUS: usize = 1;
 
 // a parameter that can change
 const QUEUE_SIZE: usize = 32;
+
+const KEY_MAX: u16 = 0x2FF;

@@ -7,6 +7,7 @@
 
 // #[macro_use]
 extern crate log;
+extern crate alloc;
 
 mod blk;
 mod console;
@@ -21,7 +22,7 @@ pub use self::blk::VirtIOBlk;
 pub use self::console::VirtIOConsole;
 pub use self::gpu::VirtIOGpu;
 pub use self::header::*;
-pub use self::input::VirtIOInput;
+pub use self::input::*;
 pub use self::net::VirtIONet;
 use self::queue::VirtQueue;
 use core::mem::size_of;
